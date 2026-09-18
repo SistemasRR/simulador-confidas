@@ -395,8 +395,9 @@
       <input type="text" id="clienteInput" placeholder="Ej: Juan Pérez">
     </div>
     <div class="field">
-      <label>DNI / CUIT</label>
-      <input type="text" id="dniInput" placeholder="Opcional" inputmode="numeric">
+      <label>CUIT</label>
+      <input type="text" id="dniInput" placeholder="Ej: 20-38091208-3" inputmode="numeric" maxlength="13" autocomplete="off">
+      <div class="hint" id="dniHint">Formato XX-XXXXXXXX-X — los guiones se completan solos a medida que escribís los números.</div>
     </div>
 
     <button class="btn-primary" id="simularBtn">Simular</button>
@@ -594,6 +595,8 @@ const montoLegend = document.getElementById('montoLegend');
 const cuotaPreview = document.getElementById('cuotaPreview');
 const cuotaPreviewSub = document.getElementById('cuotaPreviewSub');
 const fechaInput = document.getElementById('fechaInput');
+const dniInput = document.getElementById('dniInput');
+const dniHint = document.getElementById('dniHint');
 const simularBtn = document.getElementById('simularBtn');
 const resultCard = document.getElementById('resultCard');
 const rangeLabel = document.getElementById('rangeLabel');
@@ -1087,6 +1090,42 @@ montoInput.addEventListener('blur', (e)=>{
   updateCuotaPreview();
 });
 
+/* ===== CUIT: autoformateo mientras se escribe + validación =====
+   El CUIT es el dato que después se usa para cruzar esta fila con las
+   respuestas del formulario de documentación (ahí se pide en el mismo
+   formato XX-XXXXXXXX-X), así que acá lo forzamos desde el origen en
+   vez de dejarlo como texto libre. */
+function formatCuit(raw){
+  const digits = raw.replace(/\D/g,'').slice(0,11);
+  if(digits.length <= 2) return digits;
+  if(digits.length <= 10) return digits.slice(0,2) + '-' + digits.slice(2);
+  return digits.slice(0,2) + '-' + digits.slice(2,10) + '-' + digits.slice(10);
+}
+function isCuitCompleto(v){
+  return /^\d{2}-\d{8}-\d{1}$/.test(v);
+}
+dniInput.addEventListener('input', ()=>{
+  const cursorAlFinal = dniInput.selectionEnd === dniInput.value.length;
+  dniInput.value = formatCuit(dniInput.value);
+  if(cursorAlFinal){ dniInput.selectionStart = dniInput.selectionEnd = dniInput.value.length; }
+  if(!dniInput.value){
+    dniHint.textContent = 'Formato XX-XXXXXXXX-X — los guiones se completan solos a medida que escribís los números.';
+    dniHint.classList.remove('warn');
+  } else if(isCuitCompleto(dniInput.value)){
+    dniHint.textContent = 'CUIT válido.';
+    dniHint.classList.remove('warn');
+  } else {
+    dniHint.textContent = 'Te faltan dígitos del CUIT.';
+    dniHint.classList.add('warn');
+  }
+});
+dniInput.addEventListener('blur', ()=>{
+  if(dniInput.value && !isCuitCompleto(dniInput.value)){
+    dniHint.textContent = 'El CUIT quedó incompleto — revisalo antes de enviar la solicitud.';
+    dniHint.classList.add('warn');
+  }
+});
+
 document.querySelectorAll('.term-btn').forEach(btn=>{
   btn.addEventListener('click', ()=>{
     document.querySelectorAll('.term-btn').forEach(b=>b.classList.remove('active'));
@@ -1107,6 +1146,7 @@ simularBtn.addEventListener('click', ()=>{
   const monto = clampMonto(raw);
   montoInput.value = fmtInt(monto);
   if(!fechaInput.value){ alert('Seleccioná la fecha de la primera cuota.'); return; }
+  if(!isCuitCompleto(dniInput.value)){ alert('Ingresá el CUIT completo, formato XX-XXXXXXXX-X.'); dniInput.focus(); return; }
 
   const cuota = cuotaFor(monto, currentGridKey, selectedTerm);
   if(cuota === null){ alert('Todavía no hay una tasa cargada para ' + selectedTerm + ' cuotas en esta grilla.'); return; }
