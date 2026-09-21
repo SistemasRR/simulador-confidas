@@ -390,8 +390,9 @@
       <input type="text" id="clienteInput" placeholder="Ej: Juan Pérez">
     </div>
     <div class="field">
-      <label>DNI / CUIT</label>
-      <input type="text" id="dniInput" placeholder="Opcional" inputmode="numeric">
+      <label>CUIT</label>
+      <input type="text" id="dniInput" placeholder="20-12345678-9" inputmode="numeric" maxlength="13">
+      <div class="hint" id="dniHint">Opcional. Formato: 20-12345678-9.</div>
     </div>
 
     <button class="btn-primary" id="simularBtn">Simular</button>
@@ -587,6 +588,8 @@ const montoHint = document.getElementById('montoHint');
 const montoLegend = document.getElementById('montoLegend');
 const cuotaPreview = document.getElementById('cuotaPreview');
 const cuotaPreviewSub = document.getElementById('cuotaPreviewSub');
+const dniInput = document.getElementById('dniInput');
+const dniHint = document.getElementById('dniHint');
 const simularBtn = document.getElementById('simularBtn');
 const resultCard = document.getElementById('resultCard');
 const rangeLabel = document.getElementById('rangeLabel');
@@ -981,6 +984,42 @@ montoInput.addEventListener('input', (e)=>{
   e.target.value = raw ? fmtInt(raw) : '';
   updateCuotaPreview();
 });
+
+/* ===== CUIT: máscara y validación de formato =====
+   Formato fijo: 2 dígitos - 8 dígitos - 1 dígito (ej: 20-12345678-9), que es
+   el formato estándar del CUIT/CUIL en Argentina. Es opcional (se puede
+   dejar vacío), pero si se carga algo, tiene que quedar completo y bien
+   formado antes de poder simular. Solo valida la forma (cantidad de
+   dígitos y guiones en su lugar), no el dígito verificador. */
+function formatCuit(v){
+  const digits = String(v).replace(/\D/g,'').slice(0,11);
+  if(digits.length > 10) return digits.slice(0,2) + '-' + digits.slice(2,10) + '-' + digits.slice(10);
+  if(digits.length > 2) return digits.slice(0,2) + '-' + digits.slice(2);
+  return digits;
+}
+function isCuitCompleto(v){
+  return /^\d{2}-\d{8}-\d$/.test(v);
+}
+dniInput.addEventListener('input', (e)=>{
+  e.target.value = formatCuit(e.target.value);
+  dniHint.classList.remove('warn');
+  dniHint.textContent = 'Opcional. Formato: 20-12345678-9.';
+});
+dniInput.addEventListener('blur', (e)=>{
+  const v = e.target.value.trim();
+  if(!v){
+    dniHint.textContent = 'Opcional. Formato: 20-12345678-9.';
+    dniHint.classList.remove('warn');
+    return;
+  }
+  if(isCuitCompleto(v)){
+    dniHint.textContent = 'CUIT con formato válido.';
+    dniHint.classList.remove('warn');
+  } else {
+    dniHint.textContent = 'Formato incompleto o inválido — tiene que ser 20-12345678-9 (2 dígitos, guión, 8 dígitos, guión, 1 dígito).';
+    dniHint.classList.add('warn');
+  }
+});
 function defaultMontoHintText(){
   const topeMax = montoMaxVigente();
   return 'Ingresá un valor entre ' + fmtMoney0(currentGrid.min) + ' y ' + fmtMoney0(topeMax) + '.';
@@ -1086,6 +1125,12 @@ document.querySelectorAll('.term-btn').forEach(btn=>{
 
 simularBtn.addEventListener('click', ()=>{
   if(!selectedTerm){ alert('Seleccioná un plazo.'); return; }
+  const cuitVal = dniInput.value.trim();
+  if(cuitVal && !isCuitCompleto(cuitVal)){
+    alert('El CUIT tiene que tener el formato 20-12345678-9 (2 dígitos, guión, 8 dígitos, guión, 1 dígito), o dejarse vacío.');
+    dniInput.focus();
+    return;
+  }
   const topeMax = montoMaxVigente();
   if(topeMax <= 0){ alert('Con la cuota máxima del certificado de afectación, no se puede otorgar ningún monto a ' + selectedTerm + ' cuotas.'); return; }
   const raw = parseMonto(montoInput.value);
