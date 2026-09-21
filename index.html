@@ -383,11 +383,6 @@
       </div>
     </div>
 
-    <div class="field">
-      <label>Fecha de la primera cuota</label>
-      <input type="date" id="fechaInput">
-    </div>
-
     <div class="divider"></div>
 
     <div class="field">
@@ -395,9 +390,8 @@
       <input type="text" id="clienteInput" placeholder="Ej: Juan Pérez">
     </div>
     <div class="field">
-      <label>CUIT</label>
-      <input type="text" id="dniInput" placeholder="Ej: 20-38091208-3" inputmode="numeric" maxlength="13" autocomplete="off">
-      <div class="hint" id="dniHint">Formato XX-XXXXXXXX-X — los guiones se completan solos a medida que escribís los números.</div>
+      <label>DNI / CUIT</label>
+      <input type="text" id="dniInput" placeholder="Opcional" inputmode="numeric">
     </div>
 
     <button class="btn-primary" id="simularBtn">Simular</button>
@@ -411,7 +405,6 @@
 
       <div class="result-row"><span class="k">Monto del préstamo</span><span class="v" id="rMonto">-</span></div>
       <div class="result-row"><span class="k">Cantidad de cuotas</span><span class="v" id="rPlazo">-</span></div>
-      <div class="result-row"><span class="k">Fecha de la primera cuota</span><span class="v" id="rFecha">-</span></div>
 
       <div class="badge-info">Los valores surgen de la grilla de tasas vigente. Sujeto a aprobación crediticia y verificación de datos.</div>
 
@@ -594,9 +587,6 @@ const montoHint = document.getElementById('montoHint');
 const montoLegend = document.getElementById('montoLegend');
 const cuotaPreview = document.getElementById('cuotaPreview');
 const cuotaPreviewSub = document.getElementById('cuotaPreviewSub');
-const fechaInput = document.getElementById('fechaInput');
-const dniInput = document.getElementById('dniInput');
-const dniHint = document.getElementById('dniHint');
 const simularBtn = document.getElementById('simularBtn');
 const resultCard = document.getElementById('resultCard');
 const rangeLabel = document.getElementById('rangeLabel');
@@ -986,13 +976,6 @@ afectacionInput.addEventListener('blur', (e)=>{
   updateCuotaPreview();
 });
 
-// default fecha: hoy + 1 mes
-(function setDefaultDate(){
-  const d = new Date();
-  d.setMonth(d.getMonth()+1);
-  fechaInput.value = d.toISOString().slice(0,10);
-})();
-
 montoInput.addEventListener('input', (e)=>{
   const raw = parseMonto(e.target.value);
   e.target.value = raw ? fmtInt(raw) : '';
@@ -1090,42 +1073,6 @@ montoInput.addEventListener('blur', (e)=>{
   updateCuotaPreview();
 });
 
-/* ===== CUIT: autoformateo mientras se escribe + validación =====
-   El CUIT es el dato que después se usa para cruzar esta fila con las
-   respuestas del formulario de documentación (ahí se pide en el mismo
-   formato XX-XXXXXXXX-X), así que acá lo forzamos desde el origen en
-   vez de dejarlo como texto libre. */
-function formatCuit(raw){
-  const digits = raw.replace(/\D/g,'').slice(0,11);
-  if(digits.length <= 2) return digits;
-  if(digits.length <= 10) return digits.slice(0,2) + '-' + digits.slice(2);
-  return digits.slice(0,2) + '-' + digits.slice(2,10) + '-' + digits.slice(10);
-}
-function isCuitCompleto(v){
-  return /^\d{2}-\d{8}-\d{1}$/.test(v);
-}
-dniInput.addEventListener('input', ()=>{
-  const cursorAlFinal = dniInput.selectionEnd === dniInput.value.length;
-  dniInput.value = formatCuit(dniInput.value);
-  if(cursorAlFinal){ dniInput.selectionStart = dniInput.selectionEnd = dniInput.value.length; }
-  if(!dniInput.value){
-    dniHint.textContent = 'Formato XX-XXXXXXXX-X — los guiones se completan solos a medida que escribís los números.';
-    dniHint.classList.remove('warn');
-  } else if(isCuitCompleto(dniInput.value)){
-    dniHint.textContent = 'CUIT válido.';
-    dniHint.classList.remove('warn');
-  } else {
-    dniHint.textContent = 'Te faltan dígitos del CUIT.';
-    dniHint.classList.add('warn');
-  }
-});
-dniInput.addEventListener('blur', ()=>{
-  if(dniInput.value && !isCuitCompleto(dniInput.value)){
-    dniHint.textContent = 'El CUIT quedó incompleto — revisalo antes de enviar la solicitud.';
-    dniHint.classList.add('warn');
-  }
-});
-
 document.querySelectorAll('.term-btn').forEach(btn=>{
   btn.addEventListener('click', ()=>{
     document.querySelectorAll('.term-btn').forEach(b=>b.classList.remove('active'));
@@ -1145,20 +1092,16 @@ simularBtn.addEventListener('click', ()=>{
   if(!raw){ alert('Ingresá un monto.'); return; }
   const monto = clampMonto(raw);
   montoInput.value = fmtInt(monto);
-  if(!fechaInput.value){ alert('Seleccioná la fecha de la primera cuota.'); return; }
-  if(!isCuitCompleto(dniInput.value)){ alert('Ingresá el CUIT completo, formato XX-XXXXXXXX-X.'); dniInput.focus(); return; }
 
   const cuota = cuotaFor(monto, currentGridKey, selectedTerm);
   if(cuota === null){ alert('Todavía no hay una tasa cargada para ' + selectedTerm + ' cuotas en esta grilla.'); return; }
-  const fechaPrimera = new Date(fechaInput.value + 'T00:00:00').toLocaleDateString('es-AR');
 
   document.getElementById('cuotaValue').textContent = fmtMoney(cuota);
   document.getElementById('rMonto').textContent = fmtMoney0(monto);
   document.getElementById('rPlazo').textContent = selectedTerm + ' cuotas';
-  document.getElementById('rFecha').textContent = fechaPrimera;
 
   lastResult = {
-    monto, plazo:selectedTerm, cuota, fechaPrimera,
+    monto, plazo:selectedTerm, cuota,
     grillaLabel: currentGrid.label,
     cliente: document.getElementById('clienteInput').value.trim(),
     dni: document.getElementById('dniInput').value.trim(),
@@ -1203,8 +1146,7 @@ document.getElementById('enviarSolicitudBtn').addEventListener('click', async ()
     plazo: lastResult.plazo,
     cuota: Math.round(lastResult.cuota * 100) / 100, // evita el ruido de coma flotante en el mail/planilla
     cliente: lastResult.cliente,
-    dni: lastResult.dni,
-    fechaPrimera: lastResult.fechaPrimera
+    dni: lastResult.dni
   };
 
   try{
