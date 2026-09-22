@@ -159,7 +159,7 @@
   .amount-input input{padding-left:26px;font-weight:600;}
   .term-grid{
     display:grid;
-    grid-template-columns:repeat(4,1fr);
+    grid-template-columns:repeat(3,1fr);
     gap:8px;
   }
   .term-btn{
@@ -177,6 +177,16 @@
     border-color:var(--blue);
     background:var(--blue-pale);
     color:var(--blue);
+  }
+  .term-btn.disabled{
+    opacity:.45;
+    cursor:not-allowed;
+    background:#F5F7FA;
+  }
+  .term-btn.disabled.active{
+    border-color:var(--line);
+    background:#F5F7FA;
+    color:var(--ink-soft);
   }
   .btn-primary{
     width:100%;
@@ -339,9 +349,11 @@
     <div class="field">
       <label>Grilla</label>
       <select id="grillaSelect">
-        <option value="grilla2026">Estándar</option>
-        <option value="descuentoComun">Promocional</option>
-        <option value="descuentoEspecial">Preferencial</option>
+        <option value="grilla13">Grilla 13</option>
+        <option value="grilla12">Grilla 12</option>
+        <option value="grilla11">Grilla 11</option>
+        <option value="grilla10">Grilla 10</option>
+        <option value="grilla09">Grilla 09</option>
       </select>
       <div class="hint" id="tasaStatus">Cargando tasas…</div>
     </div>
@@ -359,8 +371,10 @@
       <label>Plazo</label>
       <div class="term-grid">
         <div class="term-btn" data-term="12">12 cuotas</div>
+        <div class="term-btn" data-term="15">15 cuotas</div>
         <div class="term-btn" data-term="18">18 cuotas</div>
         <div class="term-btn" data-term="24">24 cuotas</div>
+        <div class="term-btn" data-term="30">30 cuotas</div>
         <div class="term-btn" data-term="36">36 cuotas</div>
       </div>
     </div>
@@ -443,21 +457,22 @@ const COMERCIALES_SHEET_ID = "1cN0paDmRmdmJ_rWUdvTV6s20a0YN-MoW4SNAZsGhji4";
 const COMERCIALES_SHEET_NAME = "Comercializadores";
 const COMERCIALES_CSV_URL = "https://docs.google.com/spreadsheets/d/" + COMERCIALES_SHEET_ID + "/gviz/tq?tqx=out:csv&sheet=" + encodeURIComponent(COMERCIALES_SHEET_NAME);
 
-const GRID_META = {"grilla2026": {"label": "Estándar", "min": 10000, "max": 10000000}, "descuentoComun": {"label": "Promocional", "min": 10000, "max": 10000000}, "descuentoEspecial": {"label": "Preferencial", "min": 10000, "max": 10000000}};
-const FALLBACK_TASAS = {"grilla2026": {"12": 250.35, "18": 287.54, "24": 340.29, "36": 447.99}, "descuentoComun": {"12": 221.38, "18": 265.67, "24": 317.11, "36": 399.86}, "descuentoEspecial": {"12": 202.02, "18": 243.4, "24": 284.06, "36": 344.66}};
+const GRID_META = {"grilla13": {"label": "Grilla 13", "min": 10000, "max": 10000000}, "grilla12": {"label": "Grilla 12", "min": 10000, "max": 10000000}, "grilla11": {"label": "Grilla 11", "min": 10000, "max": 10000000}, "grilla10": {"label": "Grilla 10", "min": 10000, "max": 10000000}, "grilla09": {"label": "Grilla 09", "min": 10000, "max": 10000000}};
+const FALLBACK_TASAS = {"grilla13": {"12": 250.35, "15": 0, "18": 287.54, "24": 340.29, "30": 0, "36": 447.99}, "grilla12": {"12": 221.38, "15": 0, "18": 265.67, "24": 317.11, "30": 0, "36": 399.86}, "grilla11": {"12": 202.02, "15": 0, "18": 243.4, "24": 284.06, "30": 0, "36": 344.66}, "grilla10": {"12": 200.5, "15": 218.38, "18": 237.1, "24": 276.9, "30": 319.57, "36": 364.76}, "grilla09": {"12": 0, "15": 0, "18": 0, "24": 0, "30": 0, "36": 0}};
 
 // Nombres de fila esperados en la hoja -> clave interna de grilla.
-// Normalizados (sin acentos, minúscula) para tolerar variaciones de tipeo.
+// Normalizados (sin acentos, minúscula) para tolerar variaciones de tipeo
+// (ej. "Grilla 13", "grilla13" o "GRILLA 13" matchean igual). A propósito
+// NO se acepta el número solo (ej. "13") como nombre de fila, porque
+// coincidiría visualmente con las columnas de plazo (12/18/24/36) y
+// podría confundir la detección de la fila de encabezados de la planilla.
 const ROW_LABEL_MAP = {
-  "estandar": "grilla2026",
-  "gral": "grilla2026",
-  "grilla2026": "grilla2026",
-  "promocional": "descuentoComun",
-  "comun": "descuentoComun",
-  "descuentocomun": "descuentoComun",
-  "preferencial": "descuentoEspecial",
-  "especial": "descuentoEspecial",
-  "descuentoespecial": "descuentoEspecial",
+  "grilla13": "grilla13",
+  "grilla12": "grilla12",
+  "grilla11": "grilla11",
+  "grilla10": "grilla10",
+  "grilla09": "grilla09",
+  "grilla9": "grilla09",
 };
 
 function normalizeLabel(s){
@@ -497,10 +512,14 @@ function parseCSV(text){
   return rows;
 }
 // Recorre una matriz de filas (ya vengan de un CSV parseado o de la respuesta
-// JSON de Sheets) y arma { gridKey: {12:tasa,18:tasa,24:tasa,36:tasa} }.
-// No asume que la fila de encabezado (12/18/24/36) sea la primera: la busca
-// en cualquier posición, porque Sheets a veces no la marca como header real
-// y la manda mezclada con los datos.
+// JSON de Sheets) y arma { gridKey: {12:tasa,15:tasa,18:tasa,24:tasa,30:tasa,36:tasa} }.
+// No asume que la fila de encabezado (12/15/18/24/30/36) sea la primera: la
+// busca en cualquier posición, porque Sheets a veces no la marca como header
+// real y la manda mezclada con los datos.
+// Una tasa cargada como 0 (0.00%) significa "esa combinación de grilla y
+// plazo no está habilitada": se guarda igual como 0 acá (no se descarta la
+// fila por eso) y es tasaVigente() más abajo quien la trata como no
+// disponible al momento de calcular o mostrar la cuota.
 function parseTasasFromRows(rows){
   rows = rows.filter(r => r.some(c => c !== undefined && c !== null && String(c) !== ''));
   if(rows.length < 2) throw new Error('La planilla no tiene filas de datos.');
@@ -511,7 +530,7 @@ function parseTasasFromRows(rows){
       const m = String(h).match(/^\s*(\d+)/);
       if(m){
         const n = parseInt(m[1], 10);
-        if([12,18,24,36].includes(n)) map[n] = idx;
+        if([12,15,18,24,30,36].includes(n)) map[n] = idx;
       }
     });
     if(Object.keys(map).length >= 2){ headerIdx = i; colForTerm = map; break; }
@@ -524,7 +543,7 @@ function parseTasasFromRows(rows){
     if(!key) continue;
     const tasa = {};
     let ok = true;
-    [12,18,24,36].forEach(n=>{
+    [12,15,18,24,30,36].forEach(n=>{
       const idx = colForTerm[n];
       const val = (idx === undefined) ? null : parsePercent(rows[r][idx]);
       if(val === null) ok = false;
@@ -743,7 +762,10 @@ function coefFromTasa(tasaPercent, n){
 }
 function tasaVigente(gridKey, term){
   const t = TASAS[gridKey] && TASAS[gridKey][term];
-  return (typeof t === 'number') ? t : null;
+  // Una tasa cargada como 0 quiere decir "esta combinación de grilla y plazo
+  // no está habilitada" (así lo carga Rosario en la planilla), no que el
+  // préstamo sale gratis. La tratamos igual que "no hay tasa".
+  return (typeof t === 'number' && t > 0) ? t : null;
 }
 function cuotaFor(monto, gridKey, term){
   const tasa = tasaVigente(gridKey, term);
@@ -863,6 +885,7 @@ async function cargarTasasDesdeSheet(){
     tasaStatus.title = res.error || '';
   }
   bindRefreshBtn();
+  updateTermButtonsAvailability();
   updateAfectacionHint();
   syncMontoConTope();
   updateCuotaPreview();
@@ -953,6 +976,7 @@ function cargarComerciales(){
 }
 
 updateRangeLabel();
+updateTermButtonsAvailability();
 updateCuotaPreview();
 cargarTasasDesdeSheet();
 
@@ -960,6 +984,7 @@ grillaSelect.addEventListener('change', (e)=>{
   currentGridKey = e.target.value;
   currentGrid = GRID_META[currentGridKey];
   updateRangeLabel();
+  updateTermButtonsAvailability();
   updateAfectacionHint();
   syncMontoConTope();
   updateCuotaPreview();
@@ -1074,7 +1099,7 @@ function updateCuotaPreview(){
   const cuota = cuotaFor(monto, currentGridKey, selectedTerm);
   if(cuota === null){
     cuotaPreview.textContent = '—';
-    cuotaPreviewSub.textContent = 'Todavía no hay una tasa cargada para ' + selectedTerm + ' cuotas en esta grilla.';
+    cuotaPreviewSub.textContent = 'Esa combinación todavía no está habilitada. Elegí otro plazo para seguir.';
     return;
   }
   cuotaPreview.textContent = fmtMoney(cuota);
@@ -1111,8 +1136,25 @@ montoInput.addEventListener('blur', (e)=>{
   updateCuotaPreview();
 });
 
+// Marca en gris los plazos que, para la grilla elegida, tienen tasa 0 (no
+// habilitados), para que la persona no llegue a elegir uno "muerto" y recién
+// se entere del problema después de cargar monto y CUIT. Si el plazo que
+// estaba elegido deja de estar disponible (por ejemplo al cambiar de grilla),
+// se deselecciona.
+function updateTermButtonsAvailability(){
+  document.querySelectorAll('.term-btn').forEach(btn=>{
+    const term = parseInt(btn.dataset.term,10);
+    const disponible = tasaVigente(currentGridKey, term) !== null;
+    btn.classList.toggle('disabled', !disponible);
+  });
+  if(selectedTerm !== null && tasaVigente(currentGridKey, selectedTerm) === null){
+    selectedTerm = null;
+    document.querySelectorAll('.term-btn').forEach(b=>b.classList.remove('active'));
+  }
+}
 document.querySelectorAll('.term-btn').forEach(btn=>{
   btn.addEventListener('click', ()=>{
+    if(btn.classList.contains('disabled')) return;
     document.querySelectorAll('.term-btn').forEach(b=>b.classList.remove('active'));
     btn.classList.add('active');
     selectedTerm = parseInt(btn.dataset.term,10);
@@ -1143,7 +1185,7 @@ simularBtn.addEventListener('click', ()=>{
   montoInput.value = fmtInt(monto);
 
   const cuota = cuotaFor(monto, currentGridKey, selectedTerm);
-  if(cuota === null){ alert('Todavía no hay una tasa cargada para ' + selectedTerm + ' cuotas en esta grilla.'); return; }
+  if(cuota === null){ alert('Esa combinación de grilla y plazo todavía no está habilitada. Elegí otro plazo para continuar.'); return; }
 
   document.getElementById('cuotaValue').textContent = fmtMoney(cuota);
   document.getElementById('rMonto').textContent = fmtMoney0(monto);
