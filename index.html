@@ -178,15 +178,8 @@
     background:var(--blue-pale);
     color:var(--blue);
   }
-  .term-btn.disabled{
-    opacity:.45;
-    cursor:not-allowed;
-    background:#F5F7FA;
-  }
-  .term-btn.disabled.active{
-    border-color:var(--line);
-    background:#F5F7FA;
-    color:var(--ink-soft);
+  .term-btn.hidden{
+    display:none;
   }
   .btn-primary{
     width:100%;
@@ -353,7 +346,6 @@
         <option value="grilla12">Grilla 12</option>
         <option value="grilla11">Grilla 11</option>
         <option value="grilla10">Grilla 10</option>
-        <option value="grilla09">Grilla 09</option>
       </select>
       <div class="hint" id="tasaStatus">Cargando tasas…</div>
     </div>
@@ -457,7 +449,7 @@ const COMERCIALES_SHEET_ID = "1cN0paDmRmdmJ_rWUdvTV6s20a0YN-MoW4SNAZsGhji4";
 const COMERCIALES_SHEET_NAME = "Comercializadores";
 const COMERCIALES_CSV_URL = "https://docs.google.com/spreadsheets/d/" + COMERCIALES_SHEET_ID + "/gviz/tq?tqx=out:csv&sheet=" + encodeURIComponent(COMERCIALES_SHEET_NAME);
 
-const GRID_META = {"grilla13": {"label": "Grilla 13", "min": 10000, "max": 10000000}, "grilla12": {"label": "Grilla 12", "min": 10000, "max": 10000000}, "grilla11": {"label": "Grilla 11", "min": 10000, "max": 10000000}, "grilla10": {"label": "Grilla 10", "min": 10000, "max": 10000000}, "grilla09": {"label": "Grilla 09", "min": 10000, "max": 10000000}};
+const GRID_META = {"grilla13": {"label": "Grilla 13", "min": 10000, "max": 10000000, "visible": true}, "grilla12": {"label": "Grilla 12", "min": 10000, "max": 10000000, "visible": true}, "grilla11": {"label": "Grilla 11", "min": 10000, "max": 10000000, "visible": true}, "grilla10": {"label": "Grilla 10", "min": 10000, "max": 10000000, "visible": true}, "grilla09": {"label": "Grilla 09", "min": 10000, "max": 10000000, "visible": false}};
 const FALLBACK_TASAS = {"grilla13": {"12": 250.35, "15": 0, "18": 287.54, "24": 340.29, "30": 0, "36": 447.99}, "grilla12": {"12": 221.38, "15": 0, "18": 265.67, "24": 317.11, "30": 0, "36": 399.86}, "grilla11": {"12": 202.02, "15": 0, "18": 243.4, "24": 284.06, "30": 0, "36": 344.66}, "grilla10": {"12": 200.5, "15": 218.38, "18": 237.1, "24": 276.9, "30": 319.57, "36": 364.76}, "grilla09": {"12": 0, "15": 0, "18": 0, "24": 0, "30": 0, "36": 0}};
 
 // Nombres de fila esperados en la hoja -> clave interna de grilla.
@@ -615,8 +607,11 @@ const rangeLabel = document.getElementById('rangeLabel');
 
 // Las opciones ya vienen escritas en el HTML (ver arriba) para que se vean
 // aunque el JS no llegue a correr. Acá solo completamos si faltara alguna
-// (por ejemplo si en el futuro se agrega una grilla nueva a GRID_META).
+// grilla visible (por ejemplo si en el futuro se agrega una grilla nueva a
+// GRID_META). Las grillas con visible:false (como Grilla 09 por ahora)
+// quedan a propósito fuera del desplegable.
 Object.keys(GRID_META).forEach(key=>{
+  if(GRID_META[key].visible === false) return;
   if(!grillaSelect.querySelector('option[value="'+key+'"]')){
     const opt = document.createElement('option');
     opt.value = key;
@@ -1136,16 +1131,16 @@ montoInput.addEventListener('blur', (e)=>{
   updateCuotaPreview();
 });
 
-// Marca en gris los plazos que, para la grilla elegida, tienen tasa 0 (no
-// habilitados), para que la persona no llegue a elegir uno "muerto" y recién
-// se entere del problema después de cargar monto y CUIT. Si el plazo que
-// estaba elegido deja de estar disponible (por ejemplo al cambiar de grilla),
-// se deselecciona.
+// Oculta directamente los plazos que, para la grilla elegida, tienen tasa 0
+// (no habilitados) — igual criterio que ocultar una grilla entera: si no está
+// habilitado, no se muestra, en vez de mostrarlo gris. Si el plazo que estaba
+// elegido deja de estar disponible (por ejemplo al cambiar de grilla), se
+// deselecciona.
 function updateTermButtonsAvailability(){
   document.querySelectorAll('.term-btn').forEach(btn=>{
     const term = parseInt(btn.dataset.term,10);
     const disponible = tasaVigente(currentGridKey, term) !== null;
-    btn.classList.toggle('disabled', !disponible);
+    btn.classList.toggle('hidden', !disponible);
   });
   if(selectedTerm !== null && tasaVigente(currentGridKey, selectedTerm) === null){
     selectedTerm = null;
@@ -1154,7 +1149,7 @@ function updateTermButtonsAvailability(){
 }
 document.querySelectorAll('.term-btn').forEach(btn=>{
   btn.addEventListener('click', ()=>{
-    if(btn.classList.contains('disabled')) return;
+    if(btn.classList.contains('hidden')) return;
     document.querySelectorAll('.term-btn').forEach(b=>b.classList.remove('active'));
     btn.classList.add('active');
     selectedTerm = parseInt(btn.dataset.term,10);
