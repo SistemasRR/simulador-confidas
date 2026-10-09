@@ -3,6 +3,13 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<!-- Le pedimos al navegador que no guarde una copia vieja de este archivo en
+     caché: así, cuando se sube una versión nueva a GitHub Pages, alcanza con
+     recargar la página (sin tener que forzar un refresco "duro") para verla.
+     No todos los navegadores respetan esto al 100%, pero ayuda. -->
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
 <title>Confidas · Simulador de Préstamos Personales</title>
 <style>
   :root{
@@ -342,10 +349,10 @@
     <div class="field">
       <label>Grilla</label>
       <select id="grillaSelect">
+        <option value="grilla16">Grilla 16</option>
+        <option value="grilla15">Grilla 15</option>
+        <option value="grilla14">Grilla 14</option>
         <option value="grilla13">Grilla 13</option>
-        <option value="grilla12">Grilla 12</option>
-        <option value="grilla11">Grilla 11</option>
-        <option value="grilla10">Grilla 10</option>
       </select>
       <div class="hint" id="tasaStatus">Cargando tasas…</div>
     </div>
@@ -449,20 +456,20 @@ const COMERCIALES_SHEET_ID = "1cN0paDmRmdmJ_rWUdvTV6s20a0YN-MoW4SNAZsGhji4";
 const COMERCIALES_SHEET_NAME = "Comercializadores";
 const COMERCIALES_CSV_URL = "https://docs.google.com/spreadsheets/d/" + COMERCIALES_SHEET_ID + "/gviz/tq?tqx=out:csv&sheet=" + encodeURIComponent(COMERCIALES_SHEET_NAME);
 
-const GRID_META = {"grilla13": {"label": "Grilla 13", "min": 10000, "max": 10000000, "visible": true}, "grilla12": {"label": "Grilla 12", "min": 10000, "max": 10000000, "visible": true}, "grilla11": {"label": "Grilla 11", "min": 10000, "max": 10000000, "visible": true}, "grilla10": {"label": "Grilla 10", "min": 10000, "max": 10000000, "visible": true}, "grilla09": {"label": "Grilla 09", "min": 10000, "max": 10000000, "visible": false}};
-const FALLBACK_TASAS = {"grilla13": {"12": 250.35, "15": 0, "18": 287.54, "24": 340.29, "30": 0, "36": 447.99}, "grilla12": {"12": 221.38, "15": 0, "18": 265.67, "24": 317.11, "30": 0, "36": 399.86}, "grilla11": {"12": 202.02, "15": 0, "18": 243.4, "24": 284.06, "30": 0, "36": 344.66}, "grilla10": {"12": 200.5, "15": 218.38, "18": 237.1, "24": 276.9, "30": 319.57, "36": 364.76}, "grilla09": {"12": 0, "15": 0, "18": 0, "24": 0, "30": 0, "36": 0}};
+const GRID_META = {"grilla16": {"label": "Grilla 16", "min": 10000, "max": 10000000, "visible": true}, "grilla15": {"label": "Grilla 15", "min": 10000, "max": 10000000, "visible": true}, "grilla14": {"label": "Grilla 14", "min": 10000, "max": 10000000, "visible": true}, "grilla13": {"label": "Grilla 13", "min": 10000, "max": 10000000, "visible": true}, "grilla09": {"label": "Grilla 09", "min": 10000, "max": 10000000, "visible": false}};
+const FALLBACK_TASAS = {"grilla16": {"12": 250.35, "15": 0, "18": 287.54, "24": 340.29, "30": 0, "36": 447.99}, "grilla15": {"12": 221.38, "15": 0, "18": 265.67, "24": 317.11, "30": 0, "36": 399.86}, "grilla14": {"12": 202.02, "15": 0, "18": 243.4, "24": 284.06, "30": 0, "36": 344.66}, "grilla13": {"12": 200.5, "15": 218.38, "18": 237.1, "24": 276.9, "30": 319.57, "36": 364.76}, "grilla09": {"12": 0, "15": 0, "18": 0, "24": 0, "30": 0, "36": 0}};
 
 // Nombres de fila esperados en la hoja -> clave interna de grilla.
 // Normalizados (sin acentos, minúscula) para tolerar variaciones de tipeo
-// (ej. "Grilla 13", "grilla13" o "GRILLA 13" matchean igual). A propósito
+// (ej. "Grilla 16", "grilla16" o "GRILLA 13" matchean igual). A propósito
 // NO se acepta el número solo (ej. "13") como nombre de fila, porque
 // coincidiría visualmente con las columnas de plazo (12/18/24/36) y
 // podría confundir la detección de la fila de encabezados de la planilla.
 const ROW_LABEL_MAP = {
+  "grilla16": "grilla16",
+  "grilla15": "grilla15",
+  "grilla14": "grilla14",
   "grilla13": "grilla13",
-  "grilla12": "grilla12",
-  "grilla11": "grilla11",
-  "grilla10": "grilla10",
   "grilla09": "grilla09",
   "grilla9": "grilla09",
 };
@@ -575,6 +582,7 @@ function mergeTasas(base, fetched){
 
 /* ===== Estado ===== */
 let TASAS = FALLBACK_TASAS; // se reemplaza por los datos de Sheets si el fetch funciona
+let ultimaActualizacionTasas = 0; // Date.now() del último intento de traer tasas, para no repetir de más
 let currentGridKey = Object.keys(GRID_META)[0];
 let currentGrid = GRID_META[currentGridKey];
 let selectedTerm = null;
@@ -866,6 +874,7 @@ function pedirTasasJSONP(){
   });
 }
 async function cargarTasasDesdeSheet(){
+  ultimaActualizacionTasas = Date.now();
   tasaStatus.textContent = 'Actualizando tasas desde Google Sheets…';
   tasaStatus.classList.remove('warn');
   const res = await pedirTasasJSONP();
@@ -974,6 +983,29 @@ updateRangeLabel();
 updateTermButtonsAvailability();
 updateCuotaPreview();
 cargarTasasDesdeSheet();
+
+/* ===== Refresco automático de tasas =====
+   Si alguien deja la calculadora abierta en una pestaña (por ejemplo toda la
+   noche, o mientras hace otra cosa), las tasas que tiene cargadas en memoria
+   quedan "congeladas" en el momento en que se abrió esa pestaña — hasta
+   ahora, solo se volvían a traer si tocaba manualmente "Actualizar". Para
+   que no haga falta cerrar y volver a abrir el archivo, las volvemos a traer
+   solas cada vez que la persona vuelve a esa pestaña (la destapa o le da
+   foco), y además cada 10 minutos por las dudas quede una pestaña siempre
+   abierta y visible en primer plano. TASAS_REFRESH_MIN_INTERVALO_MS evita
+   que dos disparadores casi simultáneos (por ejemplo "volver a la pestaña" +
+   "foco de la ventana") terminen pidiendo la planilla dos veces seguidas. */
+const TASAS_REFRESH_MIN_INTERVALO_MS = 2 * 60 * 1000; // no repetir si pasó menos de 2 minutos
+function refrescarDatosSiCorresponde(){
+  if(Date.now() - ultimaActualizacionTasas < TASAS_REFRESH_MIN_INTERVALO_MS) return;
+  cargarTasasDesdeSheet();
+  cargarComerciales();
+}
+document.addEventListener('visibilitychange', ()=>{
+  if(document.visibilityState === 'visible') refrescarDatosSiCorresponde();
+});
+window.addEventListener('focus', refrescarDatosSiCorresponde);
+setInterval(refrescarDatosSiCorresponde, 10 * 60 * 1000);
 
 grillaSelect.addEventListener('change', (e)=>{
   currentGridKey = e.target.value;
