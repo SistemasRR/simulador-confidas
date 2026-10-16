@@ -559,13 +559,31 @@ function parseTasasFromCSV(text){
 // {cols:[...], rows:[{c:[{v,f},...]}]}) en la misma matriz de filas que usa
 // parseTasasFromRows, tomando el valor formateado (f, ej. "250.35%") cuando
 // existe y si no el valor crudo (v).
-function tableToRows(table){
+//
+// Con precisionCompleta=true (se usa para las tasas) se prefiere el valor
+// numérico crudo (v) en vez del texto formateado: así la calculadora recibe
+// todos los decimales que tiene la planilla (ej. 340,272%) y no solo los que
+// se alcanzan a ver en pantalla (340,27%). Si la celda tiene formato porcentaje
+// (f termina en "%"), Sheets manda v como fracción (3.40272) y se pasa a
+// porcentaje multiplicando por 100.
+function tableToRows(table, precisionCompleta){
   const rows = [];
   const hdr = (table.cols || []).map(c => (c && c.label) ? c.label : '');
   if(hdr.some(h => h !== '')) rows.push(hdr);
   (table.rows || []).forEach(r => {
     rows.push((r.c || []).map(cell => {
       if(!cell) return '';
+      if(precisionCompleta && typeof cell.v === 'number' && isFinite(cell.v)){
+        // Se decide comparando contra el texto que se ve: si v*100 coincide con
+        // lo mostrado, la celda es un porcentaje real (v es fracción); si v ya
+        // coincide, es un número común con el símbolo % solo de adorno.
+        let pct = cell.v;
+        const visto = (typeof cell.f === 'string') ? parsePercent(cell.f) : null;
+        if(visto !== null && Math.abs(cell.v * 100 - visto) < 0.01 && Math.abs(cell.v - visto) >= 0.01){
+          pct = cell.v * 100;
+        }
+        return String(Math.round(pct * 1e6) / 1e6);
+      }
       if(cell.f !== undefined && cell.f !== null) return cell.f;
       return (cell.v === undefined || cell.v === null) ? '' : cell.v;
     }));
@@ -900,7 +918,7 @@ function pedirTasasJSONP(){
       if(done) return; done = true;
       try{
         if(!data || data.status !== 'ok' || !data.table) throw new Error('Respuesta inesperada de Google Sheets.');
-        const fetched = parseTasasFromRows(tableToRows(data.table));
+        const fetched = parseTasasFromRows(tableToRows(data.table, true));
         if(Object.keys(fetched).length === 0) throw new Error('No se reconoció ninguna fila de la planilla.');
         limpiar();
         resolve({ok: true, fetched: fetched});
