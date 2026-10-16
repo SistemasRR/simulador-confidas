@@ -361,9 +361,9 @@
       <label>Valor cuota máxima según certificado de afectación</label>
       <div class="amount-input">
         <span class="cur">$</span>
-        <input type="text" id="afectacionInput" inputmode="numeric" placeholder="0" autocomplete="off">
+        <input type="text" id="afectacionInput" inputmode="decimal" placeholder="0,00" autocomplete="off">
       </div>
-      <div class="hint" id="afectacionHint">Es la cuota máxima mensual que el cliente puede pagar. Va a limitar el monto máximo a otorgar según el plazo elegido.</div>
+      <div class="hint" id="afectacionHint">Es la cuota máxima mensual que el cliente puede pagar (los centavos van con coma, ej: 213.967,93). Va a limitar el monto máximo a otorgar según el plazo elegido.</div>
     </div>
 
     <div class="field">
@@ -758,6 +758,56 @@ function parseMonto(v){
   return parseInt(String(v).replace(/[^\d]/g,''),10) || 0;
 }
 
+/* ===== Importes con centavos (certificado de afectación) =====
+   La coma es el separador decimal (213.967,93). Como el campo va poniendo
+   solo los puntos de los miles, un punto tipeado o pegado se toma como
+   decimal únicamente si queda al final con 0, 1 o 2 dígitos atrás (ej:
+   "213967.93" o "213.967." recién tipeado); un punto seguido de 3 dígitos
+   es de miles. Se admiten hasta 2 decimales. */
+function splitDecimal(v){
+  const s = String(v).replace(/[\s$]/g, '');
+  let ent = s, dec = '', sep = false;
+  const iComa = s.lastIndexOf(',');
+  if(iComa !== -1){
+    ent = s.slice(0, iComa); dec = s.slice(iComa + 1); sep = true;
+  } else {
+    const m = s.match(/^(.*)\.(\d{0,2})$/);
+    if(m){
+      ent = m[1];
+      // "213." tipeado a mano suele ser el punto de miles de "213.967": se
+      // ignora. Un punto al final después de más dígitos ("213.967." o
+      // "1234.") o con decimales ya escritos ("213967.93") es decimal.
+      const soloPunto = (m[2] === '' && m[1].indexOf('.') === -1 && m[1].replace(/\D/g, '').length <= 3);
+      if(!soloPunto){ dec = m[2]; sep = true; }
+    }
+  }
+  ent = ent.replace(/\D/g, '').replace(/^0+(?=\d)/, '');
+  dec = dec.replace(/\D/g, '').slice(0, 2);
+  return {ent: ent, dec: dec, sep: sep};
+}
+function parseMontoDecimal(v){
+  const s = splitDecimal(v);
+  return parseFloat((s.ent || '0') + (s.dec ? '.' + s.dec : '')) || 0;
+}
+// final=false: mientras se tipea (conserva la coma recién puesta).
+// final=true: al salir del campo (completa a 2 decimales si hay centavos).
+function fmtDecimalInput(v, final){
+  const s = splitDecimal(v);
+  if(!s.ent && !s.dec) return '';
+  let out = fmtInt(parseInt(s.ent || '0', 10));
+  if(final){
+    const d = (s.dec + '00').slice(0, 2);
+    if(d !== '00') out += ',' + d;
+  } else if(s.sep){
+    out += ',' + s.dec;
+  }
+  return out;
+}
+// Cuota máxima: sin centavos si es redonda, con 2 decimales si los tiene.
+function fmtCuotaMax(n){
+  return Math.abs(n - Math.round(n)) < 0.005 ? fmtMoney0(n) : fmtMoney(n);
+}
+
 // Coeficiente "por peso" implícito en la tasa total cargada en Sheets.
 // Tasa = Plazo × Coeficiente × 100  =>  Coeficiente = (Tasa/100) / Plazo
 function coefFromTasa(tasaPercent, n){
@@ -805,21 +855,21 @@ function montoMaxVigente(){
 }
 function updateAfectacionHint(){
   if(!afectacionMonto){
-    afectacionHint.textContent = 'Es la cuota máxima mensual que el cliente puede pagar. Va a limitar el monto máximo a otorgar según el plazo elegido.';
+    afectacionHint.textContent = 'Es la cuota máxima mensual que el cliente puede pagar (los centavos van con coma, ej: 213.967,93). Va a limitar el monto máximo a otorgar según el plazo elegido.';
     afectacionHint.classList.remove('warn');
     return;
   }
   if(!selectedTerm){
-    afectacionHint.textContent = 'Cuota máxima mensual: ' + fmtMoney0(afectacionMonto) + '. Elegí un plazo para ver el monto máximo a otorgar.';
+    afectacionHint.textContent = 'Cuota máxima mensual: ' + fmtCuotaMax(afectacionMonto) + '. Elegí un plazo para ver el monto máximo a otorgar.';
     afectacionHint.classList.remove('warn');
     return;
   }
   const max = maxMontoForPlazo(selectedTerm, afectacionMonto);
   if(max <= 0){
-    afectacionHint.textContent = 'Con ' + fmtMoney0(afectacionMonto) + ' de cuota máxima, no se puede otorgar ningún monto a ' + selectedTerm + ' cuotas (ni el mínimo de la grilla entra en ese pago).';
+    afectacionHint.textContent = 'Con ' + fmtCuotaMax(afectacionMonto) + ' de cuota máxima, no se puede otorgar ningún monto a ' + selectedTerm + ' cuotas (ni el mínimo de la grilla entra en ese pago).';
     afectacionHint.classList.add('warn');
   } else {
-    afectacionHint.textContent = 'Con ' + fmtMoney0(afectacionMonto) + ' de cuota máxima, el monto máximo a otorgar a ' + selectedTerm + ' cuotas es ' + fmtMoney0(max) + '.';
+    afectacionHint.textContent = 'Con ' + fmtCuotaMax(afectacionMonto) + ' de cuota máxima, el monto máximo a otorgar a ' + selectedTerm + ' cuotas es ' + fmtMoney0(max) + '.';
     afectacionHint.classList.remove('warn');
   }
 }
@@ -1019,12 +1069,11 @@ grillaSelect.addEventListener('change', (e)=>{
 });
 
 afectacionInput.addEventListener('input', (e)=>{
-  const raw = parseMonto(e.target.value);
-  e.target.value = raw ? fmtInt(raw) : '';
+  e.target.value = fmtDecimalInput(e.target.value, false);
 });
 afectacionInput.addEventListener('blur', (e)=>{
-  afectacionMonto = parseMonto(e.target.value);
-  e.target.value = afectacionMonto ? fmtInt(afectacionMonto) : '';
+  afectacionMonto = parseMontoDecimal(e.target.value);
+  e.target.value = fmtDecimalInput(e.target.value, true);
   updateAfectacionHint();
   resetResult();
   syncMontoConTope();
