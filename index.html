@@ -607,6 +607,7 @@ let selectedTerm = null;
 let lastResult = null;
 let afectacionMonto = 0; // cuota máxima mensual que el cliente puede pagar (0 = sin límite cargado)
 let comercialActual = ''; // nombre del comercializador que inició sesión
+let comercialUsuario = ''; // usuario (login) del comercializador, para buscar sus grillas habilitadas
 
 const loginScreen = document.getElementById('loginScreen');
 const appWrap = document.getElementById('appWrap');
@@ -666,6 +667,7 @@ Object.keys(GRID_META).forEach(key=>{
    loguearse cada vez que abre el archivo; "Cambiar" borra eso y vuelve a
    pedir usuario y contraseña. */
 const LOGIN_STORAGE_KEY = 'confidas_comercial_usuario';
+const LOGIN_USER_STORAGE_KEY = 'confidas_comercial_login'; // usuario (no el nombre) para volver a aplicar sus grillas al reabrir
 
 let COMERCIALES = null;        // se completa con lo que devuelva la planilla
 let comercialesCargando = null; // Promise en curso, para no pedir la planilla dos veces a la vez
@@ -678,7 +680,7 @@ async function validarCredenciales(usuario, password){
 
   if(!res.ok){
     // No se pudo consultar la planilla: dejamos entrar (falla abierta).
-    return {ok:true, nombre: usuario, sinVerificar:true};
+    return {ok:true, nombre: usuario, usuario: usuario, sinVerificar:true};
   }
 
   const match = res.comerciales.find(c => c.usuario.toLowerCase() === usuario.toLowerCase());
@@ -688,7 +690,7 @@ async function validarCredenciales(usuario, password){
   if(match.activo.trim().toUpperCase() !== 'SI'){
     return {ok:false, motivo:'inactivo'};
   }
-  return {ok:true, nombre: match.nombre || usuario};
+  return {ok:true, nombre: match.nombre || usuario, usuario: match.usuario};
 }
 
 function actualizarRoleTag(){
@@ -700,7 +702,8 @@ function actualizarRoleTag(){
 }
 function mostrarLogin(){
   comercialActual = '';
-  try{ localStorage.removeItem(LOGIN_STORAGE_KEY); }catch(e){}
+  comercialUsuario = '';
+  try{ localStorage.removeItem(LOGIN_STORAGE_KEY); localStorage.removeItem(LOGIN_USER_STORAGE_KEY); }catch(e){}
   appWrap.style.display = 'none';
   loginScreen.classList.add('show');
   loginUsuarioInput.value = '';
@@ -735,16 +738,23 @@ async function iniciarSesion(usuario, password){
   }
 
   comercialActual = res.nombre;
-  try{ localStorage.setItem(LOGIN_STORAGE_KEY, res.nombre); }catch(e){}
+  comercialUsuario = res.usuario || usuario;
+  try{ localStorage.setItem(LOGIN_STORAGE_KEY, res.nombre); localStorage.setItem(LOGIN_USER_STORAGE_KEY, comercialUsuario); }catch(e){}
+  if(!aplicarGrillasDelUsuario()) return; // sin ninguna grilla habilitada: vuelve al login con aviso
   actualizarRoleTag();
   loginScreen.classList.remove('show');
   appWrap.style.display = '';
 }
 function initLogin(){
-  let guardado = '';
-  try{ guardado = localStorage.getItem(LOGIN_STORAGE_KEY) || ''; }catch(e){}
+  let guardado = '', guardadoUsuario = '';
+  try{ guardado = localStorage.getItem(LOGIN_STORAGE_KEY) || ''; guardadoUsuario = localStorage.getItem(LOGIN_USER_STORAGE_KEY) || ''; }catch(e){}
   if(guardado){
     comercialActual = guardado;
+    comercialUsuario = guardadoUsuario;
+    // Hasta confirmar qué grillas tiene habilitadas (la planilla de usuarios
+    // todavía se está trayendo), el selector queda bloqueado para que nadie
+    // elija una grilla que después no le correspondía.
+    if(!COMERCIALES) grillaSelect.disabled = true;
     actualizarRoleTag();
     appWrap.style.display = '';
   } else {
@@ -981,6 +991,7 @@ function parseComercialesFromRows(rows){
       else if(norm === 'contrasena' || norm === 'password' || norm === 'clave') map.password = idx;
       else if(norm === 'nombreyapellido' || norm === 'nombre') map.nombre = idx;
       else if(norm === 'activo') map.activo = idx;
+      else if(GRID_META[norm]){ (map.grillas = map.grillas || {})[norm] = idx; }
     });
     if(map.usuario !== undefined && map.password !== undefined){ headerIdx = i; col = map; break; }
   }
@@ -991,7 +1002,19 @@ function parseComercialesFromRows(rows){
     const row = rows[r];
     const usuario = String((col.usuario !== undefined ? row[col.usuario] : '') || '').trim();
     if(!usuario) continue;
+    // Grillas habilitadas: si la planilla tiene columnas "Grilla XX", solo
+    // vale SI (cualquier otra cosa, incluida la celda vacía, es NO). Si la
+    // planilla no tiene ninguna columna de grilla, grillas queda en null =
+    // sin restricción (ve todas las grillas visibles).
+    let grillas = null;
+    if(col.grillas){
+      grillas = {};
+      Object.keys(col.grillas).forEach(k=>{
+        grillas[k] = normalizeLabel(row[col.grillas[k]]) === 'si';
+      });
+    }
     result.push({
+      grillas: grillas,
       usuario: usuario,
       password: String((col.password !== undefined ? row[col.password] : '') || '').trim(),
       nombre: String((col.nombre !== undefined ? row[col.nombre] : '') || '').trim() || usuario,
@@ -1037,11 +1060,58 @@ function pedirComercialesJSONP(){
     document.head.appendChild(script);
   });
 }
+/* ===== Grillas habilitadas por comercializador =====
+   La planilla de usuarios puede tener una columna por grilla ("Grilla 16",
+   "Grilla 15", etc.) con SI/NO. Acá se calcula qué grillas ve el usuario
+   que inició sesión y se arma el desplegable con solo esas. Es un filtro
+   de la pantalla (igual que el login, no es seguridad real). Si la planilla
+   no se pudo consultar, falla abierta: se muestran todas las visibles. */
+const GRILLAS_OPCIONES = Array.from(grillaSelect.options);
+function grillasVisiblesTodas(){
+  return Object.keys(GRID_META).filter(k => GRID_META[k].visible !== false);
+}
+function grillasPermitidasUsuario(){
+  const visibles = grillasVisiblesTodas();
+  if(!COMERCIALES || !comercialUsuario) return visibles;
+  const m = COMERCIALES.find(c => c.usuario.toLowerCase() === comercialUsuario.toLowerCase());
+  if(!m || !m.grillas) return visibles;
+  return visibles.filter(k => m.grillas[k]);
+}
+// Devuelve false si el usuario no tiene ninguna grilla habilitada (en ese
+// caso lo manda de vuelta al login con un aviso).
+function aplicarGrillasDelUsuario(){
+  const permitidas = grillasPermitidasUsuario();
+  if(permitidas.length === 0){
+    mostrarLogin();
+    loginHint.textContent = 'Tu usuario no tiene grillas habilitadas. Consultá con administración.';
+    loginHint.style.display = 'block';
+    return false;
+  }
+  const actuales = Array.from(grillaSelect.options).map(o => o.value).join(',');
+  if(actuales !== permitidas.join(',')){
+    grillaSelect.innerHTML = '';
+    permitidas.forEach(k=>{
+      const opt = GRILLAS_OPCIONES.find(o => o.value === k);
+      if(opt) grillaSelect.appendChild(opt);
+      else { const o = document.createElement('option'); o.value = k; o.textContent = GRID_META[k].label; grillaSelect.appendChild(o); }
+    });
+  }
+  grillaSelect.disabled = (permitidas.length === 1);
+  if(permitidas.indexOf(currentGridKey) === -1){
+    currentGridKey = permitidas[0];
+    grillaSelect.value = currentGridKey;
+    onGrillaCambiada();
+  } else {
+    grillaSelect.value = currentGridKey;
+  }
+  return true;
+}
 function cargarComerciales(){
   if(comercialesCargando) return comercialesCargando;
   comercialesCargando = pedirComercialesJSONP().then(res=>{
     if(res.ok){ COMERCIALES = res.comerciales; }
     comercialesCargando = null;
+    if(comercialActual) aplicarGrillasDelUsuario();
     return res;
   });
   return comercialesCargando;
@@ -1077,6 +1147,9 @@ setInterval(refrescarDatosSiCorresponde, 10 * 60 * 1000);
 
 grillaSelect.addEventListener('change', (e)=>{
   currentGridKey = e.target.value;
+  onGrillaCambiada();
+});
+function onGrillaCambiada(){
   currentGrid = GRID_META[currentGridKey];
   updateRangeLabel();
   updateTermButtonsAvailability();
@@ -1084,7 +1157,7 @@ grillaSelect.addEventListener('change', (e)=>{
   syncMontoConTope();
   updateCuotaPreview();
   resetResult();
-});
+}
 
 afectacionInput.addEventListener('input', (e)=>{
   e.target.value = fmtDecimalInput(e.target.value, false);
@@ -1259,6 +1332,7 @@ document.querySelectorAll('.term-btn').forEach(btn=>{
 });
 
 simularBtn.addEventListener('click', ()=>{
+  if(grillasPermitidasUsuario().indexOf(currentGridKey) === -1){ alert('Tu usuario no tiene habilitada esta grilla. Elegí otra.'); return; }
   if(!selectedTerm){ alert('Seleccioná un plazo.'); return; }
   const cuitVal = dniInput.value.trim();
   if(!cuitVal){
